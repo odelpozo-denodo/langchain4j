@@ -59,6 +59,8 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
      * Embeddings table name
      */
     protected final String table;
+
+    private final boolean createExtension;
     /**
      * Metadata handler
      */
@@ -74,6 +76,7 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
      * @param indexListSize         The IVFFlat number of lists
      * @param createTable           Should create table automatically
      * @param dropTableFirst        Should drop table first, usually for testing
+     * @param createExtension       Should the embedding store execute the "CREATE EXTENSION IF NOT EXISTS vector" statement when retrieving a connection
      * @param metadataStorageConfig The {@link MetadataStorageConfig} config.
      */
     protected PgVectorEmbeddingStore(DataSource datasource,
@@ -83,6 +86,7 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
                                      Integer indexListSize,
                                      Boolean createTable,
                                      Boolean dropTableFirst,
+                                     Boolean createExtension,
                                      MetadataStorageConfig metadataStorageConfig) {
         this.datasource = ensureNotNull(datasource, "datasource");
         this.table = ensureNotBlank(table, "table");
@@ -91,6 +95,7 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
         useIndex = getOrDefault(useIndex, false);
         createTable = getOrDefault(createTable, true);
         dropTableFirst = getOrDefault(dropTableFirst, false);
+        this.createExtension = getOrDefault(createExtension, true);
 
         initTable(dropTableFirst, createTable, useIndex, dimension, indexListSize);
     }
@@ -110,6 +115,7 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
      * @param indexListSize         The IVFFlat number of lists
      * @param createTable           Should create table automatically
      * @param dropTableFirst        Should drop table first, usually for testing
+     * @param createExtension       Should the embedding store execute the "CREATE EXTENSION IF NOT EXISTS vector" statement when retrieving a connection
      * @param metadataStorageConfig The {@link MetadataStorageConfig} config.
      */
     @SuppressWarnings("unused")
@@ -125,16 +131,18 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
             Integer indexListSize,
             Boolean createTable,
             Boolean dropTableFirst,
+            Boolean createExtension,
             MetadataStorageConfig metadataStorageConfig
     ) {
         this(createDataSource(host, port, user, password, database),
-                table, dimension, useIndex, indexListSize, createTable, dropTableFirst, metadataStorageConfig);
+                table, dimension, useIndex, indexListSize, createTable, dropTableFirst, createExtension, metadataStorageConfig);
     }
 
     public PgVectorEmbeddingStore() {
         this.datasource = null;
         this.table = null;
         this.metadataHandler = null;
+        this.createExtension = true;
     }
 
     private static DataSource createDataSource(String host, Integer port, String user, String password, String database) {
@@ -411,8 +419,10 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
         // Find a way to do the following code in connection initialization.
         // Here we assume the datasource could handle a connection pool
         // and we should add the vector type on each connection
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate("CREATE EXTENSION IF NOT EXISTS vector");
+        if (createExtension) {
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("CREATE EXTENSION IF NOT EXISTS vector");
+            }
         }
         PGvector.addVectorType(connection);
         return connection;
@@ -426,6 +436,7 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
         private Integer indexListSize;
         private Boolean createTable;
         private Boolean dropTableFirst;
+        private Boolean createExtension;
         private MetadataStorageConfig metadataStorageConfig;
 
         DatasourceBuilder() {
@@ -466,17 +477,22 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
             return this;
         }
 
+        public DatasourceBuilder createExtension(Boolean createExtension) {
+            this.createExtension = createExtension;
+            return this;
+        }
+
         public DatasourceBuilder metadataStorageConfig(MetadataStorageConfig metadataStorageConfig) {
             this.metadataStorageConfig = metadataStorageConfig;
             return this;
         }
 
         public PgVectorEmbeddingStore build() {
-            return new PgVectorEmbeddingStore(this.datasource, this.table, this.dimension, this.useIndex, this.indexListSize, this.createTable, this.dropTableFirst, this.metadataStorageConfig);
+            return new PgVectorEmbeddingStore(this.datasource, this.table, this.dimension, this.useIndex, this.indexListSize, this.createTable, this.dropTableFirst, this.createExtension, this.metadataStorageConfig);
         }
 
         public String toString() {
-            return "PgVectorEmbeddingStore.DatasourceBuilder(datasource=" + this.datasource + ", table=" + this.table + ", dimension=" + this.dimension + ", useIndex=" + this.useIndex + ", indexListSize=" + this.indexListSize + ", createTable=" + this.createTable + ", dropTableFirst=" + this.dropTableFirst + ", metadataStorageConfig=" + this.metadataStorageConfig + ")";
+            return "PgVectorEmbeddingStore.DatasourceBuilder(datasource=" + this.datasource + ", table=" + this.table + ", dimension=" + this.dimension + ", useIndex=" + this.useIndex + ", indexListSize=" + this.indexListSize + ", createTable=" + this.createTable + ", dropTableFirst=" + this.dropTableFirst + ", createExtension=" + this.createExtension + ", metadataStorageConfig=" + this.metadataStorageConfig + ")";
         }
     }
 
@@ -492,6 +508,7 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
         private Integer indexListSize;
         private Boolean createTable;
         private Boolean dropTableFirst;
+        private Boolean createExtension;
         private MetadataStorageConfig metadataStorageConfig;
 
         PgVectorEmbeddingStoreBuilder() {
@@ -547,6 +564,11 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
             return this;
         }
 
+        public PgVectorEmbeddingStoreBuilder createExtension(Boolean createExtension) {
+            this.createExtension = createExtension;
+            return this;
+        }
+
         public PgVectorEmbeddingStoreBuilder dropTableFirst(Boolean dropTableFirst) {
             this.dropTableFirst = dropTableFirst;
             return this;
@@ -558,11 +580,11 @@ public class PgVectorEmbeddingStore implements EmbeddingStore<TextSegment> {
         }
 
         public PgVectorEmbeddingStore build() {
-            return new PgVectorEmbeddingStore(this.host, this.port, this.user, this.password, this.database, this.table, this.dimension, this.useIndex, this.indexListSize, this.createTable, this.dropTableFirst, this.metadataStorageConfig);
+            return new PgVectorEmbeddingStore(this.host, this.port, this.user, this.password, this.database, this.table, this.dimension, this.useIndex, this.indexListSize, this.createTable, this.dropTableFirst, this.createExtension, this.metadataStorageConfig);
         }
 
         public String toString() {
-            return "PgVectorEmbeddingStore.PgVectorEmbeddingStoreBuilder(host=" + this.host + ", port=" + this.port + ", user=" + this.user + ", password=" + this.password + ", database=" + this.database + ", table=" + this.table + ", dimension=" + this.dimension + ", useIndex=" + this.useIndex + ", indexListSize=" + this.indexListSize + ", createTable=" + this.createTable + ", dropTableFirst=" + this.dropTableFirst + ", metadataStorageConfig=" + this.metadataStorageConfig + ")";
+            return "PgVectorEmbeddingStore.PgVectorEmbeddingStoreBuilder(host=" + this.host + ", port=" + this.port + ", user=" + this.user + ", password=" + this.password + ", database=" + this.database + ", table=" + this.table + ", dimension=" + this.dimension + ", useIndex=" + this.useIndex + ", indexListSize=" + this.indexListSize + ", createTable=" + this.createTable + ", dropTableFirst=" + this.dropTableFirst + ", createExtension=" + this.createExtension + ", metadataStorageConfig=" + this.metadataStorageConfig + ")";
         }
     }
 }
